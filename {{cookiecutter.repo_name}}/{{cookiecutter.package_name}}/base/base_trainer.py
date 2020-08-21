@@ -4,7 +4,14 @@ import math
 import yaml
 import torch
 
-from {{ cookiecutter.package_name }}.utils import setup_logger, trainer_paths, TensorboardWriter
+from {{ cookiecutter.package_name }}.utils import (
+    setup_logger,
+    trainer_paths,
+    TensorboardWriter
+)
+
+
+log = setup_logger(__name__)
 
 
 class TrainerBase:
@@ -12,7 +19,6 @@ class TrainerBase:
     Base class for all trainers
     """
     def __init__(self, model, loss, metrics, optimizer, start_epoch, config, device):
-        self.logger = setup_logger(self, verbose=config['training']['verbose'])
         self.model = model
         self.loss = loss
         self.metrics = metrics
@@ -36,25 +42,27 @@ class TrainerBase:
         """
         Full training logic
         """
-        self.logger.info('Starting training...')
+        log.info('Starting training...')
         for epoch in range(self.start_epoch, self.epochs):
             result = self._train_epoch(epoch)
 
             # save logged informations into log dict
-            log = {'epoch': epoch}
+            results = {'epoch': epoch}
             for key, value in result.items():
                 if key == 'metrics':
-                    log.update({
+                    results.update({
                         mtr.__name__: value[i] for i, mtr in enumerate(self.metrics)})
                 elif key == 'val_metrics':
-                    log.update({
-                        'val_' + mtr.__name__: value[i] for i, mtr in enumerate(self.metrics)})
+                    results.update({
+                        'val_' + mtr.__name__: value[i] for
+                        i, mtr in enumerate(self.metrics)
+                    })
                 else:
-                    log[key] = value
+                    results[key] = value
 
             # print logged informations to the screen
-            for key, value in log.items():
-                self.logger.info(f'{str(key):15s}: {value}')
+            for key, value in results.items():
+                log.info(f'{str(key):15s}: {value}')
 
             # evaluate model performance according to configured metric,
             # save best checkpoint as model_best
@@ -63,24 +71,24 @@ class TrainerBase:
                 try:
                     # check whether model performance improved or not, according
                     # to specified metric(mnt_metric)
-                    improved = (self.mnt_mode == 'min' and log[self.mnt_metric] < self.mnt_best) or\
-                               (self.mnt_mode == 'max' and log[self.mnt_metric] > self.mnt_best)
+                    improved = (self.mnt_mode == 'min' and results[self.mnt_metric] < self.mnt_best) or\
+                               (self.mnt_mode == 'max' and results[self.mnt_metric] > self.mnt_best)
                 except KeyError:
-                    self.logger.warning(f"Warning: Metric '{self.mnt_metric}' is not found. Model "
+                    log.warning(f"Warning: Metric '{self.mnt_metric}' is not found. Model "
                                         "performance monitoring is disabled.")
                     self.mnt_mode = 'off'
                     improved = False
                     not_improved_count = 0
 
                 if improved:
-                    self.mnt_best = log[self.mnt_metric]
+                    self.mnt_best = results[self.mnt_metric]
                     not_improved_count = 0
                     best = True
                 else:
                     not_improved_count += 1
 
                 if not_improved_count > self.early_stop:
-                    self.logger.info(f"Validation performance didn\'t improve for {self.early_stop} "
+                    log.info(f"Validation performance didn\'t improve for {self.early_stop} "
                                      "epochs. Training stops.")
                     break
 
@@ -112,11 +120,11 @@ class TrainerBase:
         }
         filename = self.checkpoint_dir / f'checkpoint-epoch{epoch}.pth'
         torch.save(state, filename)
-        self.logger.info(f"Saving checkpoint: {filename} ...")
+        log.info(f"Saving checkpoint: {filename} ...")
         if save_best:
             best_path = self.checkpoint_dir / 'model_best.pth'
             torch.save(state, best_path)
-            self.logger.info(f'Saving current best: {best_path}')
+            log.info(f'Saving current best: {best_path}')
 
     def _setup_monitoring(self, config: dict) -> None:
         """
